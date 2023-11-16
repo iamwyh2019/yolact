@@ -1,9 +1,10 @@
 import torch
 import torch.nn.functional as F
 from ..box_utils import decode, jaccard, index2d
+
 from utils import timer
 
-from data import cfg, mask_type
+from data import cfg
 
 import numpy as np
 

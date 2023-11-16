@@ -1,4 +1,4 @@
-import torch, torchvision
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models.resnet import Bottleneck
@@ -10,10 +10,8 @@ from collections import defaultdict
 
 from data.config import cfg, mask_type
 from layers import Detect
-from layers.interpolate import InterpolateModule
 from backbone import construct_backbone
 
-import torch.backends.cudnn as cudnn
 from utils import timer
 from utils.functions import MovingAverage, make_net
 
