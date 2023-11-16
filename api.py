@@ -92,7 +92,7 @@ def process_image(image: np.ndarray):
 
 def get_recognition(image: np.ndarray):
     with torch.no_grad():
-        cudnn.fastest = True
+        cudnn.fastest = True 
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
         masks, mask_contours, boxes, class_names = process_image(image)
