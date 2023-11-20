@@ -2,7 +2,10 @@ import os
 import sys
 sys.path.append(os.path.dirname(__file__))
 
-from .yolact import Yolact
+try:
+    from yolact import Yolact
+except ImportError:
+    from .yolact import Yolact
 from utils.augmentations import BaseTransform, FastBaseTransform, Resize
 from utils import timer
 from utils.functions import SavePath
@@ -37,7 +40,7 @@ def parse_result(det_result, img, score_threshold = 0.15, top_k = 15):
 
     num_dets_to_consider = min(top_k, classes.shape[0])
     for j in range(num_dets_to_consider):
-        if scores[j] <score_threshold:
+        if scores[j] < score_threshold:
             num_dets_to_consider = j
             break
 
@@ -75,17 +78,24 @@ def process_image(image: np.ndarray):
     preds = net(batch)
 
     masks, boxes, class_names = parse_result(preds, frame)
+    masks = masks.cpu().numpy().astype(np.uint8)
 
     # get the contour of each mask
     mask_contours = []
     for mask in masks:
-        mask = mask.cpu().numpy()
-        mask = np.uint8(mask) * 255
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        mask_255 = mask * 255
+        contours, hierarchy = cv2.findContours(mask_255, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         
         # sort them based on the length
         contours = sorted(contours, key=lambda x: len(x[:, 0, :]), reverse=True)
         mask_contours.append(contours[0][:, 0, :].tolist())
+
+    # remove the last dimension of masks
+    # and convert to list
+    masks = masks[:, :, :, 0].tolist()
+
+    # convert the boxes to list
+    boxes = boxes.tolist()
 
     return masks, mask_contours, boxes, class_names
     
@@ -98,8 +108,13 @@ def get_recognition(image: np.ndarray):
         masks, mask_contours, boxes, class_names = process_image(image)
 
         return {
-            'masks': masks,
+            # 'masks': masks,
             'mask_contours': mask_contours,
             'boxes': boxes,
             'class_names': class_names
         }
+    
+
+if __name__ == '__main__':
+    image = cv2.imread('p1.png')
+    get_recognition(image)
