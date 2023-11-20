@@ -652,6 +652,8 @@ def evalvideo(net:Yolact, path:str, out_path:str=None):
     target_fps   = round(vid.get(cv2.CAP_PROP_FPS))
     frame_width  = round(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = round(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    print('Opened video "%s". Resolution %dx%d. Capturing at %dfps.' % (path, frame_width, frame_height, target_fps))
     
     if is_webcam:
         num_frames = float('inf')
