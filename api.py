@@ -49,7 +49,11 @@ def parse_result(det_result, img, score_threshold = 0.15, top_k = 15):
     for j in range(num_dets_to_consider):
         class_names.append(cfg.dataset.class_names[classes[j]])
 
-    return masks, boxes, class_names
+    # masks: torch.Tensor
+    # boxes: np.ndarray
+    # class_names: list
+    # scores: np.ndarray
+    return masks, boxes, class_names, scores
     
     
 model_path = os.path.join(os.path.dirname(__file__), 'weights', 'yolact_base_54_800000.pth')
@@ -77,7 +81,21 @@ def process_image(image: np.ndarray):
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
 
-    masks, boxes, class_names = parse_result(preds, frame)
+    # masks: torch.Tensor, [N, H, W, 1]
+    # boxes: np.ndarray, [N, 4]
+    # class_names: list, [N]
+    masks, boxes, class_names, scores = parse_result(preds, frame)
+
+    # find geometric center of each mask using torch
+    geometry_centers = []
+    for i in range(masks.shape[0]):
+        mask = masks[i, :, :, 0]
+        indices = torch.nonzero(mask, as_tuple=True)
+        y_indices, x_indices = indices
+        y_center = torch.mean(y_indices.float()).item()
+        x_center = torch.mean(x_indices.float()).item()
+        geometry_centers.append([x_center, y_center])
+
     masks = masks.cpu().numpy().astype(np.uint8)
 
     # get the contour of each mask
@@ -91,13 +109,9 @@ def process_image(image: np.ndarray):
         mask_contours.append(contours[0][:, 0, :].tolist())
 
     # remove the last dimension of masks
-    # and convert to list
-    masks = masks[:, :, :, 0].tolist()
+    masks = masks[:, :, :, 0]
 
-    # convert the boxes to list
-    boxes = boxes.tolist()
-
-    return masks, mask_contours, boxes, class_names
+    return masks, mask_contours, boxes, class_names, scores, geometry_centers
     
 
 def get_recognition(image: np.ndarray):
@@ -105,16 +119,49 @@ def get_recognition(image: np.ndarray):
         cudnn.fastest = True 
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
-        masks, mask_contours, boxes, class_names = process_image(image)
+        masks, mask_contours, boxes, class_names, scores, geometry_centers = process_image(image)
+
+        
+        # convert masks, scores and boxes to list
+        masks = masks.tolist()
+        boxes = boxes.tolist()
+        scores = scores.tolist()
 
         return {
-            # 'masks': masks,
+            'masks': masks,
             'mask_contours': mask_contours,
             'boxes': boxes,
-            'class_names': class_names
+            'class_names': class_names,
+            'scores': scores,
+            'geometry_centers': geometry_centers,
         }
     
+def show_recognition(image: np.ndarray):
+    with torch.no_grad():
+        cudnn.fastest = True 
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+        masks, mask_contours, boxes, class_names, scores, geometry_centers = process_image(image)
+
+    # draw the masks
+    # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
+    for i, mask in enumerate(masks):
+        # skip the first mask
+        if i == 0:
+            continue
+        color_mask = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
+        color_mask[mask == 1] = [255, 0, 0]
+        image = cv2.addWeighted(image, 1, color_mask, 0.5, 0)
+
+    # draw the geometry centers and put the class name & scores above the center
+    for i, center in enumerate(geometry_centers):
+        cv2.circle(image, (int(center[0]), int(center[1])), 2, (0, 0, 255), -1)
+        cv2.putText(image, class_names[i] + " " + str(scores[i]), (int(center[0]), int(center[1]) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    
+    # show the image
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
 
 if __name__ == '__main__':
-    image = cv2.imread('p1.png')
-    get_recognition(image)
+    image = cv2.imread('./p1.png')
+    show_recognition(image)
