@@ -100,13 +100,17 @@ def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
     mask_contours = []
     for mask in masks:
         mask_255 = mask * 255
-        contours, hierarchy = cv2.findContours(mask_255, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        contours, hierarchy = cv2.findContours(mask_255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        contour_list = []
-        for contour in contours:
-            contour_list.append(contour[:, 0, :].tolist())
+        largest_contour = max(contours, key = cv2.contourArea)
 
-        mask_contours.append(contour_list)
+        mask_contours.append(largest_contour[:, 0, :].tolist()) # [N, 2]
+
+        # get the geometry center of the mask
+        M = cv2.moments(largest_contour)
+        cx = int(M['m10'] / M['m00'])
+        cy = int(M['m01'] / M['m00'])
+        geometry_centers.append([cx, cy])
 
     # remove the last dimension of masks
     masks = masks.squeeze(axis=3).tolist()
@@ -134,7 +138,7 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
             new_boxes = []
             new_class_names = []
             new_scores = []
-            # new_geometry_centers = []
+            new_geometry_centers = []
             for i, class_name in enumerate(class_names):
                 if class_name in filter_objects:
                     new_masks.append(masks[i])
@@ -142,13 +146,13 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
                     new_boxes.append(boxes[i])
                     new_class_names.append(class_name)
                     new_scores.append(scores[i])
-                    # new_geometry_centers.append(geometry_centers[i])
+                    new_geometry_centers.append(geometry_centers[i])
             masks = new_masks
             mask_contours = new_mask_contours
             boxes = new_boxes
             class_names = new_class_names
             scores = new_scores
-            # geometry_centers = new_geometry_centers
+            geometry_centers = new_geometry_centers
 
         return {
             'masks': masks,
@@ -156,7 +160,7 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
             'boxes': boxes,
             'class_names': class_names,
             'scores': scores,
-            # 'geometry_centers': geometry_centers,
+            'geometry_centers': geometry_centers,
         }
     
 def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
@@ -173,7 +177,7 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
         new_boxes = []
         new_class_names = []
         new_scores = []
-        # new_geometry_centers = []
+        new_geometry_centers = []
         for i, class_name in enumerate(class_names):
             if class_name in filter_objects:
                 new_masks.append(masks[i])
@@ -181,13 +185,13 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
                 new_boxes.append(boxes[i])
                 new_class_names.append(class_name)
                 new_scores.append(scores[i])
-                # new_geometry_centers.append(geometry_centers[i])
+                new_geometry_centers.append(geometry_centers[i])
         masks = new_masks
         mask_contours = new_mask_contours
         boxes = new_boxes
         class_names = new_class_names
         scores = new_scores
-        # geometry_centers = new_geometry_centers
+        geometry_centers = new_geometry_centers
    
     # draw the masks
     # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
@@ -198,10 +202,9 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
         image = cv2.addWeighted(image, 1, color_mask, 0.5, 0)
 
     # draw the contours
-    # for i, mask_contour in enumerate(mask_contours):
-    #     for contour in mask_contour:
-    #         contour = np.array(contour, dtype=np.int32)
-    #         cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+    for i, contour in enumerate(mask_contours):
+        contour = np.array(contour, dtype=np.int32)
+        cv2.drawContours(image, [contour], -1, (0, 255, 0), 1)
     
     # show the image
     cv2.imshow('image', image)
