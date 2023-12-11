@@ -198,17 +198,46 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
     for i, mask in enumerate(masks):
         mask = np.array(mask, dtype=np.uint8)
         color_mask = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
-        color_mask[mask == 1] = [255, 0, 0]
+
+        # generate a color for each object based on its class name
+        # color = np.random.randint(0, 255, size=(3,)).tolist()
+        if class_names[i] == 'laptop':
+            color = [255, 0, 0]
+        elif class_names[i] == 'person':
+            color = [0, 255, 0]
+        elif class_names[i] == 'sofa':
+            color = [0, 0, 255]
+        elif class_names[i] == 'couch':
+            color = [255, 255, 0]
+        elif class_names[i] == 'bottle':
+            color = [255, 0, 255]
+        elif class_names[i] == 'cell phone':
+            color = [0, 255, 255]
+        elif class_names[i] == 'chair':
+            color = [255, 255, 255]
+        elif class_names[i] == 'tv':
+            color = [128, 128, 128]
+        elif class_names[i] == 'mouse':
+            color = [128, 0, 0]
+        else:
+            color = [0, 0, 0]
+        color_mask[mask == 1] = color
         image = cv2.addWeighted(image, 1, color_mask, 0.5, 0)
 
     # draw the contours
     for i, contour in enumerate(mask_contours):
         contour = np.array(contour, dtype=np.int32)
-        cv2.drawContours(image, [contour], -1, (0, 255, 0), 1)
+        cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+
+    # place text at center of box
+    for i, box in enumerate(boxes):
+        x1, y1, x2, y2 = box
+        cx = int((x1 + x2) / 2)
+        cy = int((y1 + y2) / 2)
+        text = class_names[i]
+        cv2.putText(image, text, (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     
-    # show the image
-    cv2.imshow('image', image)
-    cv2.waitKey(1)
+    return image
 
 if __name__ == '__main__':
     image = cv2.imread('./p1.png')
