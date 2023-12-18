@@ -6,12 +6,15 @@ try:
     from yolact import Yolact
 except ImportError:
     from .yolact import Yolact
+try:
+    from data import COLORS, cfg, set_cfg
+except ImportError:
+    from .data import COLORS, cfg, set_cfg
+
 from utils.augmentations import BaseTransform, FastBaseTransform, Resize
 from utils import timer
 from utils.functions import SavePath
 from layers.output_utils import postprocess, undo_image_transformation
-
-from data import cfg, set_cfg, set_dataset
 
 import numpy as np
 import torch
@@ -62,17 +65,20 @@ def parse_result(det_result, img, score_threshold = 0.15, top_k = 15):
     return masks, boxes, class_names, scores
     
     
-model_path = os.path.join(os.path.dirname(__file__), 'weights', 'yolact_base_54_800000.pth')
-#'yolact_darknet53_54_800000.pth',
+# model_path = os.path.join(os.path.dirname(__file__), 'weights', 'yolact_base_54_800000.pth')
+model_path = os.path.join(os.path.dirname(__file__), 'weights', 'yolact_darknet53_54_800000.pth')
 # 'yolact_resnet50_54_800000.pth',
+
+config_name = SavePath.from_str(model_path).model_name + '_config'
+set_cfg(config_name)
+
+cudnn.fastest = True
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 net = Yolact()
 net.load_weights(model_path)
 net.eval()
 net = net.cuda()
-
-config_name = SavePath.from_str(model_path).model_name + '_config'
-set_cfg(config_name)
 
 net.detect.use_fast_nms = True
 net.detect.use_cross_class_nms = False
@@ -112,15 +118,6 @@ def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
         cy = int(M['m01'] / M['m00'])
         geometry_centers.append([cx, cy])
 
-    # remove the last dimension of masks
-    masks = masks.squeeze(axis=3).tolist()
-
-    # convert boxes to list
-    boxes = boxes.tolist()
-
-    # convert scores to list
-    scores = scores.tolist()
-
     return masks, mask_contours, boxes, class_names, scores, geometry_centers
     
 
@@ -154,6 +151,10 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
             scores = new_scores
             geometry_centers = new_geometry_centers
 
+        masks = masks.squeeze(3).tolist()
+        boxes = boxes.tolist()
+        scores = scores.tolist()
+
         return {
             'masks': masks,
             'mask_contours': mask_contours,
@@ -163,7 +164,7 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
             'geometry_centers': geometry_centers,
         }
     
-def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
+def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45):
     with torch.no_grad():
         cudnn.fastest = True 
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -196,45 +197,25 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
     # draw the masks
     # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
     for i, mask in enumerate(masks):
-        mask = np.array(mask, dtype=np.uint8)
-        color_mask = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
+        color = COLORS[i*5 % len(COLORS)]
+        color = (color[2], color[1], color[0])
+        color_mask = mask * alpha * np.array(color, dtype=np.uint8)
 
-        # generate a color for each object based on its class name
-        # color = np.random.randint(0, 255, size=(3,)).tolist()
-        if class_names[i] == 'laptop':
-            color = [255, 0, 0]
-        elif class_names[i] == 'person':
-            color = [0, 255, 0]
-        elif class_names[i] == 'sofa':
-            color = [0, 0, 255]
-        elif class_names[i] == 'couch':
-            color = [255, 255, 0]
-        elif class_names[i] == 'bottle':
-            color = [255, 0, 255]
-        elif class_names[i] == 'cell phone':
-            color = [0, 255, 255]
-        elif class_names[i] == 'chair':
-            color = [255, 255, 255]
-        elif class_names[i] == 'tv':
-            color = [128, 128, 128]
-        elif class_names[i] == 'mouse':
-            color = [128, 0, 0]
-        else:
-            color = [0, 0, 0]
-        color_mask[mask == 1] = color
-        image = cv2.addWeighted(image, 1, color_mask, 0.5, 0)
+        image = ((image * (1-mask)) + (image * mask * (1-alpha) + color_mask)).astype(np.uint8)
 
-    # draw the contours
-    for i, contour in enumerate(mask_contours):
-        contour = np.array(contour, dtype=np.int32)
-        cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+    # # draw the contours
+    # for i, contour in enumerate(mask_contours):
+    #     contour = np.array(contour, dtype=np.int32)
+    #     cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
 
-    # place text at center of box
+    # draw box and place text at center of box
     for i, box in enumerate(boxes):
         x1, y1, x2, y2 = box
+        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 1)
+
         cx = int((x1 + x2) / 2)
         cy = int((y1 + y2) / 2)
-        text = class_names[i]
+        text = class_names[i] + ' ' + str(round(scores[i], 2))
         cv2.putText(image, text, (cx, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     
     return image
