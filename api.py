@@ -102,23 +102,21 @@ def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
     masks = masks.cpu().numpy().astype(np.uint8)
 
     # get the contour of each mask
-    geometry_centers = []
+    # mask is not accurate, but bounding box is
+    # so we first filter out the areas outside the bounding box
+    # then find the contour and get the largest one
     mask_contours = []
-    for mask in masks:
-        mask_255 = mask * 255
-        contours, hierarchy = cv2.findContours(mask_255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for i, mask in enumerate(masks):
+        x1, y1, x2, y2 = boxes[i]
+        mask_crop = mask[y1:y2, x1:x2]
+        contours, hierarchy = cv2.findContours(mask_crop, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         largest_contour = max(contours, key = cv2.contourArea)
+        largest_contour = largest_contour[:, 0, :] + np.array([x1, y1]) # [N, 2]
 
-        mask_contours.append(largest_contour[:, 0, :].tolist()) # [N, 2]
+        mask_contours.append(largest_contour.tolist()) # [N, 2]
 
-        # get the geometry center of the mask
-        M = cv2.moments(largest_contour)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
-        geometry_centers.append([cx, cy])
-
-    return masks, mask_contours, boxes, class_names, scores, geometry_centers
+    return masks, mask_contours, boxes, class_names, scores
     
 
 def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
@@ -126,7 +124,11 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
         cudnn.fastest = True 
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
-        masks, mask_contours, boxes, class_names, scores, geometry_centers = process_image(image, score_threshold = score_threshold, top_k = top_k)
+        masks, mask_contours, boxes, class_names, scores = process_image(image, score_threshold = score_threshold, top_k = top_k)
+
+        masks = masks.squeeze(3).tolist()
+        boxes = boxes.tolist()
+        scores = scores.tolist()
 
         if filter_objects:
             # filter the objects by name
@@ -135,7 +137,6 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
             new_boxes = []
             new_class_names = []
             new_scores = []
-            new_geometry_centers = []
             for i, class_name in enumerate(class_names):
                 if class_name in filter_objects:
                     new_masks.append(masks[i])
@@ -143,17 +144,11 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
                     new_boxes.append(boxes[i])
                     new_class_names.append(class_name)
                     new_scores.append(scores[i])
-                    new_geometry_centers.append(geometry_centers[i])
             masks = new_masks
             mask_contours = new_mask_contours
             boxes = new_boxes
             class_names = new_class_names
             scores = new_scores
-            geometry_centers = new_geometry_centers
-
-        masks = masks.squeeze(3).tolist()
-        boxes = boxes.tolist()
-        scores = scores.tolist()
 
         return {
             'masks': masks,
@@ -161,15 +156,14 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
             'boxes': boxes,
             'class_names': class_names,
             'scores': scores,
-            'geometry_centers': geometry_centers,
         }
     
-def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45):
+def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45, black = False, contour = False):
     with torch.no_grad():
         cudnn.fastest = True 
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
-        masks, mask_contours, boxes, class_names, scores, geometry_centers = process_image(image, score_threshold = score_threshold, top_k = top_k)
+        masks, mask_contours, boxes, class_names, scores = process_image(image, score_threshold = score_threshold, top_k = top_k)
 
     if filter_objects:
         # filter the objects by name
@@ -178,7 +172,6 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
         new_boxes = []
         new_class_names = []
         new_scores = []
-        new_geometry_centers = []
         for i, class_name in enumerate(class_names):
             if class_name in filter_objects:
                 new_masks.append(masks[i])
@@ -186,13 +179,14 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
                 new_boxes.append(boxes[i])
                 new_class_names.append(class_name)
                 new_scores.append(scores[i])
-                new_geometry_centers.append(geometry_centers[i])
         masks = new_masks
         mask_contours = new_mask_contours
         boxes = new_boxes
         class_names = new_class_names
         scores = new_scores
-        geometry_centers = new_geometry_centers
+
+    if black:
+        image = np.zeros_like(image)
    
     # draw the masks
     # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
@@ -203,10 +197,11 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
 
         image = ((image * (1-mask)) + (image * mask * (1-alpha) + color_mask)).astype(np.uint8)
 
-    # # draw the contours
-    # for i, contour in enumerate(mask_contours):
-    #     contour = np.array(contour, dtype=np.int32)
-    #     cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+    # draw the contours
+    if contour:
+        for i, contour in enumerate(mask_contours):
+            contour = np.array(contour, dtype=np.int32)
+            cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
 
     # draw box and place text at center of box
     for i, box in enumerate(boxes):
