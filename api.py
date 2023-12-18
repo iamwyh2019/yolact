@@ -147,36 +147,31 @@ def get_filtered_objects(mask, mask_contours, boxes, class_names, scores, geomet
 
 def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
     with torch.no_grad():
-        cudnn.fastest = True 
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
         masks, mask_contours, boxes, class_names, scores, geometry_center = process_image(image, score_threshold = score_threshold, top_k = top_k)
 
-        masks = masks.squeeze(3).tolist()
-        boxes = boxes.tolist()
-        scores = scores.tolist()
+    masks = masks.squeeze(3).tolist()
+    boxes = boxes.tolist()
+    scores = scores.tolist()
 
-        # scores to 2 decimal places
-        scores = [round(score, 2) for score in scores]
+    # scores to 2 decimal places
+    scores = [round(score, 2) for score in scores]
 
-        if filter_objects:
-            # filter the objects by name
-            masks, mask_contours, boxes, class_names, scores, geometry_center = get_filtered_objects(masks, mask_contours, boxes, class_names, scores, geometry_center, filter_objects = filter_objects)
+    if filter_objects:
+        # filter the objects by name
+        masks, mask_contours, boxes, class_names, scores, geometry_center = get_filtered_objects(masks, mask_contours, boxes, class_names, scores, geometry_center, filter_objects = filter_objects)
 
-        return {
-            'masks': masks,
-            'mask_contours': mask_contours,
-            'boxes': boxes,
-            'class_names': class_names,
-            'scores': scores,
-            'geometry_center': geometry_center,
-        }
+    return {
+        'masks': masks,
+        'mask_contours': mask_contours,
+        'boxes': boxes,
+        'class_names': class_names,
+        'scores': scores,
+        'geometry_center': geometry_center,
+    }
     
-def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45, black = False, contour = False):
+def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45,
+                     black = False, draw_contour = False, draw_mask = True, draw_box = False):
     with torch.no_grad():
-        cudnn.fastest = True 
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
         masks, mask_contours, boxes, class_names, scores, geometry_center = process_image(image, score_threshold = score_threshold, top_k = top_k)
 
     if filter_objects:
@@ -185,27 +180,31 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
 
     if black:
         image = np.zeros_like(image)
-   
+    
+    if draw_mask:
     # draw the masks
     # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
-    for i, mask in enumerate(masks):
-        color = COLORS[i*5 % len(COLORS)]
-        color = (color[2], color[1], color[0])
-        color_mask = mask * alpha * np.array(color, dtype=np.uint8)
+        for i, mask in enumerate(masks):
+            color = COLORS[i*5 % len(COLORS)]
+            color = (color[2], color[1], color[0])
+            color_mask = mask * alpha * np.array(color, dtype=np.uint8)
 
-        image = ((image * (1-mask)) + (image * mask * (1-alpha) + color_mask)).astype(np.uint8)
+            image = ((image * (1-mask)) + (image * mask * (1-alpha) + color_mask)).astype(np.uint8)
 
     # draw the contours
-    if contour:
+    if draw_contour:
         for i, contour in enumerate(mask_contours):
             contour = np.array(contour, dtype=np.int32)
             cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
 
-    # draw box and place text at the center
-    for i, center in enumerate(geometry_center):
-        x1, y1, x2, y2 = boxes[i]
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 1)
+    # draw box
+    if draw_box:
+        for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = box
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 1)
 
+    # place text at the center
+    for i, center in enumerate(geometry_center):
         text = class_names[i] + ' ' + str(round(scores[i], 2))
         cv2.putText(image, text, center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     
