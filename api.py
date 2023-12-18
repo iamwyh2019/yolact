@@ -168,16 +168,17 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
         'scores': scores,
         'geometry_center': geometry_center,
     }
+
+def draw_recognition(image: np.ndarray, result,
+                     black = False, draw_contour = False, draw_mask = True, 
+                     draw_box = False, draw_text = True, alpha = 0.45):
+    masks = result['masks']
+    mask_contours = result['mask_contours']
+    boxes = result['boxes']
+    class_names = result['class_names']
+    scores = result['scores']
+    geometry_center = result['geometry_center']
     
-def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45,
-                     black = False, draw_contour = False, draw_mask = True, draw_box = False):
-    with torch.no_grad():
-        masks, mask_contours, boxes, class_names, scores, geometry_center = process_image(image, score_threshold = score_threshold, top_k = top_k)
-
-    if filter_objects:
-        # filter the objects by name
-        masks, mask_contours, boxes, class_names, scores, geometry_center = get_filtered_objects(masks, mask_contours, boxes, class_names, scores, geometry_center, filter_objects = filter_objects)
-
     if black:
         image = np.zeros_like(image)
     
@@ -204,10 +205,22 @@ def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0
             cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 1)
 
     # place text at the center
-    for i, center in enumerate(geometry_center):
-        text = class_names[i] + ' ' + str(round(scores[i], 2))
-        cv2.putText(image, text, center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    if draw_text:
+        for i, center in enumerate(geometry_center):
+            text = class_names[i] + ' ' + str(round(scores[i], 2))
+            cv2.putText(image, text, center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     
+    return image
+    
+def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45,
+                     black = False, draw_contour = False, draw_text = True,
+                     draw_mask = True, draw_box = False):
+    result = get_recognition(image, filter_objects = filter_objects, score_threshold = score_threshold, top_k = top_k)
+
+    image = draw_recognition(image, result,
+                            black = black, draw_contour = draw_contour,
+                            draw_mask = draw_mask, draw_box = draw_box,
+                            draw_text = draw_text, alpha = alpha)
     return image
 
 if __name__ == '__main__':
