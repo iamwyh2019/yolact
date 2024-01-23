@@ -181,15 +181,25 @@ def draw_recognition(image: np.ndarray, result,
     
     if black:
         image = np.zeros_like(image)
+
+    if isinstance(masks, list):
+        masks = np.array(masks, dtype=np.float)
     
     if draw_mask:
     # draw the masks
     # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
         for i, mask in enumerate(masks):
+            # mask is H*W, have to convert to H*W*3
+            mask = np.stack([mask, mask, mask], axis = 2)
+
             color = COLORS[i*5 % len(COLORS)]
             color = (color[2], color[1], color[0])
-            color_mask = mask * alpha * np.array(color, dtype=np.uint8)
+            color_mask = mask * alpha * np.array(color, dtype=np.float)
 
+            # outside mask area: image * (1-mask)
+            # inside mask area: image * mask
+            #   - outside color: image * mask * (1-alpha)
+            #   - inside color: color_mask
             image = ((image * (1-mask)) + (image * mask * (1-alpha) + color_mask)).astype(np.uint8)
 
     # draw the contours

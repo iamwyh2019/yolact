@@ -1097,6 +1097,7 @@ if __name__ == '__main__':
 
         print('Loading model...', end='')
         net = Yolact()
+        print("Loading weights from", args.trained_model)
         net.load_weights(args.trained_model)
         net.eval()
         print(' Done.')
