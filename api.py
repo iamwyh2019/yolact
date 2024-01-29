@@ -21,7 +21,8 @@ import torch
 import torch.backends.cudnn as cudnn
 
 import cv2
-
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import time
 
 def parse_result(det_result, img, score_threshold = 0.15, top_k = 15):
@@ -84,6 +85,7 @@ net.detect.use_fast_nms = True
 net.detect.use_cross_class_nms = False
 cfg.mask_proto_debug = False
 
+executor = ThreadPoolExecutor(max_workers = 30)
 
 def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
     global net
@@ -168,6 +170,13 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
         'scores': scores,
         'geometry_center': geometry_center,
     }
+
+
+# async version of get_recognition
+async def async_get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(executor, get_recognition, image, filter_objects, score_threshold, top_k)
+    return result
 
 def draw_recognition(image: np.ndarray, result,
                      black = False, draw_contour = False, draw_mask = True, 
