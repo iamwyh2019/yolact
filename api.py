@@ -25,7 +25,12 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import time
 
-def parse_result(det_result, img, score_threshold = 0.15, top_k = 15):
+from typing import List, Dict, Callable, Any, Union, Tuple
+
+def parse_result(det_result,
+                 img: torch.Tensor,
+                 score_threshold: float = 0.15,
+                 top_k: float = 15) -> Tuple[torch.Tensor, np.ndarray, List[str], np.ndarray]:
     h, w, _ = img.shape
 
     with timer.env('Postprocess'):
@@ -87,7 +92,9 @@ cfg.mask_proto_debug = False
 
 executor = ThreadPoolExecutor(max_workers = 30)
 
-def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
+def process_image(image: np.ndarray,
+                  score_threshold: float = 0.15,
+                  top_k: float = 15) -> Tuple[np.ndarray, List[List[List[int]]], np.ndarray, List[str], np.ndarray, List[List[int]]]:
     global net
 
     # return the raw results
@@ -101,6 +108,7 @@ def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
     # scores: np.ndarray, [N]
     masks, boxes, class_names, scores = parse_result(preds, frame, score_threshold = score_threshold, top_k = top_k)
 
+    # masks: np.ndarray, [N, H, W, 1]
     masks = masks.cpu().numpy().astype(np.uint8)
 
     # get the contour of each mask
@@ -126,10 +134,24 @@ def process_image(image: np.ndarray, score_threshold = 0.15, top_k = 15):
         largest_contour = max(contours, key = cv2.contourArea)
         largest_contour = largest_contour[:, 0, :] + np.array([x1, y1]) # [N, 2]
         mask_contours.append(largest_contour.tolist())
-
+    
+    # masks: np.ndarray, [N, H, W, 1]
+    # mask_contours: list, [N, M, 2]
+    # boxes: np.ndarray, [N, 4]
+    # class_names: list, [N]
+    # scores: np.ndarray, [N]
+    # geometry_center: list, [N, 2]
     return masks, mask_contours, boxes, class_names, scores, geometry_center
 
-def get_filtered_objects(mask, mask_contours, boxes, class_names, scores, geometry_center, filter_objects = []):
+# this function always returns in List type
+# better to pass it with list instead of np.ndarray
+def get_filtered_objects(mask: List[List[List[int]]],
+                         mask_contours: List[List[List[int]]],
+                         boxes: List[List[int]],
+                         class_names: List[str],
+                         scores: List[float],
+                         geometry_center: List[List[int]],
+                         filter_objects: List[str] = []) -> Tuple[List[List[List[int]]], List[List[List[int]]], List[List[int]], List[str], List[float], List[List[int]]]:
     new_masks = []
     new_mask_contours = []
     new_boxes = []
@@ -147,7 +169,10 @@ def get_filtered_objects(mask, mask_contours, boxes, class_names, scores, geomet
     return new_masks, new_mask_contours, new_boxes, new_class_names, new_scores, new_geometry_center
     
 
-def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
+def get_recognition(image: np.ndarray,
+                    filter_objects: List[str] = [],
+                    score_threshold: float = 0.15,
+                    top_k: float = 15) -> Dict[str, Any]:
     with torch.no_grad():
         masks, mask_contours, boxes, class_names, scores, geometry_center = process_image(image, score_threshold = score_threshold, top_k = top_k)
 
@@ -173,14 +198,17 @@ def get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.
 
 
 # async version of get_recognition
-async def async_get_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15):
+async def async_get_recognition(image: np.ndarray,
+                                filter_objects: List[str] = [],
+                                score_threshold: float = 0.15,
+                                top_k: float = 15) -> Dict[str, Any]:
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(executor, get_recognition, image, filter_objects, score_threshold, top_k)
     return result
 
-def draw_recognition(image: np.ndarray, result,
-                     black = False, draw_contour = False, draw_mask = True, 
-                     draw_box = False, draw_text = True, alpha = 0.45):
+def draw_recognition(image: np.ndarray, result: Dict[str, Any],
+                     black: bool = False, draw_contour: bool = False, draw_mask: bool = True, 
+                     draw_box: bool = False, draw_text: bool = True, alpha: float = 0.45) -> np.ndarray:
     masks = result['masks']
     mask_contours = result['mask_contours']
     boxes = result['boxes']
@@ -230,18 +258,3 @@ def draw_recognition(image: np.ndarray, result,
             cv2.putText(image, text, center, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
     
     return image
-    
-def show_recognition(image: np.ndarray, filter_objects = [], score_threshold = 0.15, top_k = 15, alpha = 0.45,
-                     black = False, draw_contour = False, draw_text = True,
-                     draw_mask = True, draw_box = False):
-    result = get_recognition(image, filter_objects = filter_objects, score_threshold = score_threshold, top_k = top_k)
-
-    image = draw_recognition(image, result,
-                            black = black, draw_contour = draw_contour,
-                            draw_mask = draw_mask, draw_box = draw_box,
-                            draw_text = draw_text, alpha = alpha)
-    return image
-
-if __name__ == '__main__':
-    image = cv2.imread('./p1.png')
-    show_recognition(image)
