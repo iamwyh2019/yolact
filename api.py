@@ -219,37 +219,52 @@ def draw_recognition(image: np.ndarray, result: Dict[str, Any],
     if black:
         image = np.zeros_like(image)
 
-    if isinstance(masks, list):
-        masks = np.array(masks, dtype=np.float)
+    if len(masks) == 0:
+        return image
+
+    # colors
+    # each color is a 3-tuple (B, G, R)
+    colors = []
+    color_list = []
+    for i in range(len(class_names)):
+        color = COLORS[i*5 % len(COLORS)]
+        color = (color[2], color[1], color[0])
+        color_list.append(color)
+        colors.append(np.array(color, dtype=np.float).reshape(1,1,1,3))
+    colors = np.concatenate(colors, axis=0)
     
     if draw_mask:
-    # draw the masks
-    # each mask is a H*W 0/1 matrix, so multiply by a color to get the color mask
-        for i, mask in enumerate(masks):
-            # mask is H*W, have to convert to H*W*3
-            mask = np.stack([mask, mask, mask], axis = 2)
+        # masks N*H*W
+        masks = np.array(masks, dtype=np.float)
+        # change to N*H*W*1
+        masks = np.expand_dims(masks, axis=3)
 
-            color = COLORS[i*5 % len(COLORS)]
-            color = (color[2], color[1], color[0])
-            color_mask = mask * alpha * np.array(color, dtype=np.float)
+        masks_color = masks.repeat(3, axis=3) * colors * alpha
 
-            # outside mask area: image * (1-mask)
-            # inside mask area: image * mask
-            #   - outside color: image * mask * (1-alpha)
-            #   - inside color: color_mask
-            image = ((image * (1-mask)) + (image * mask * (1-alpha) + color_mask)).astype(np.uint8)
+        inv_alpha_masks = masks * (-alpha) + 1
+
+        masks_color_summand = masks_color[0]
+        if len(masks_color) > 1:
+            inv_alpha_cumul = inv_alpha_masks[:-1].cumprod(axis=0)
+            masks_color_cumul = masks_color[1:] * inv_alpha_cumul
+            masks_color_summand += masks_color_cumul.sum(axis=0)
+
+        image = image * inv_alpha_masks.prod(axis=0) + masks_color_summand
+        image = image.astype(np.uint8)
 
     # draw the contours
     if draw_contour:
         for i, contour in enumerate(mask_contours):
             contour = np.array(contour, dtype=np.int32)
-            cv2.drawContours(image, [contour], -1, (0, 255, 0), 2)
+            color = color_list[i]
+            cv2.drawContours(image, [contour], -1, color, 2)
 
     # draw box
     if draw_box:
         for i, box in enumerate(boxes):
             x1, y1, x2, y2 = box
-            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 1)
+            color = color_list[i]
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, 1)
 
     # place text at the center
     if draw_text:
